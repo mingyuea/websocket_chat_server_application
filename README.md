@@ -1,0 +1,1 @@
+This is version 1 of a simple application server for my chat application, written in Node.js, using WebSockets. In this version of the server, no extra libraries were used, aside from "node-static" and standard libraries in Node. This choice was mainly made for learning purposes, to familiarize myself with how standard sockets work on the server
