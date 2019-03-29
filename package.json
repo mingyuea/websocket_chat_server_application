@@ -22,7 +22,9 @@
     "mongodb": "^3.1.10",
     "mongoose": "^5.4.3",
     "node-static": "^0.7.11",
-    "socket.io": "^2.2.0"
+    "pg": "^7.9.0",
+    "socket.io": "^2.2.0",
+    "sql": "^0.78.0"
   },
   "devDependencies": {
     "nodemon": "^1.18.7"
