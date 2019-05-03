@@ -1,6 +1,6 @@
 CREATE TABLE userauth(
 	id SERIAL,
-	username VARCHAR(50),
+	username VARCHAR(50) UNIQUE,
 	hash TEXT,
 	PRIMARY KEY(id)
 );

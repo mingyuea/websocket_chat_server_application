@@ -8,7 +8,7 @@ const router = express.Router();
 const saltRounds = 15;
 
 
-router.get('/auth/temp', (req, res) =>{
+router.get('/auth/tmp', (req, res) =>{
 	let userNum = Object.keys(users).length;
 	userNum = "Anonymous:"+userNum;
 
@@ -55,10 +55,11 @@ router.post('/auth/login', async (req, res) => {
 
 		let idEnc = cEnc.cookieEncrypt(dbRes.id, true);
 
-		console.log(idEnc);
+		//console.log(idEnc);
 		if(compBool){
 			res.cookie('uid', idEnc, {maxAge: 604800000});
-			res.send({"actionSuccess": true});
+			res.cookie('uname', username, {maxAge: 604800000});
+			res.send({"actionSuccess": true, 'redir': '/static/home'});
 		}
 		else{
 			res.send({"actionSuccess": false, "error": "Username/password combination is incorrect"});
@@ -72,7 +73,7 @@ router.post('/auth/login', async (req, res) => {
 
 
 /*handles register and saving user */
-router.post('/auth/register', async (req, res) => {
+router.post('/auth/signup', async (req, res) => {
 	let { username, password } = req.body;
 	let pool = req.app.get('pool');
 
@@ -109,19 +110,19 @@ router.post('/auth/register', async (req, res) => {
 				}
 
 				try{
-					dbRes = await dbFun.register(pool, username, hash);
+					dbRes = await dbFun.register(pool, username, hash);  //returns id from database
 				} catch (err){
 					let errMsg = "Error storing user data: " + err;
 					console.error(errMsg);
 					return res.send({"actionSuccess": false, "error": errMsg});
 				}
 
-				let idEnc = dbRes.id;
+				let idEnc = dbRes;
 				idEnc = cEnc.cookieEncrypt(idEnc, true);
 
-				console.log(idEnc);
+				//console.log(idEnc);
 				res.cookie('uid', idEnc, {maxAge: 604800000});
-				res.send({"actionSuccess": true, "dbRes": dbRes});
+				res.send({"actionSuccess": true, /*"dbRes": dbRes,*/ 'redir': '/static/home'});
 			});
 		});
 	}

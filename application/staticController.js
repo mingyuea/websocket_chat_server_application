@@ -14,7 +14,7 @@ router.get('/static/auth', (req, res) => {
 });
 
 router.get('/static/home', (req, res) => {
-	if(res.cookies.uid){
+	if(req.cookies.uid){
 		res.sendFile(path.join(__dirname, "..", "static", 'index.html'));
 	}
 	else{
