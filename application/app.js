@@ -15,12 +15,20 @@ const cEnc     = require('./cookieEncryptFunc.js');
 
 /*Connect the Postgres database*/
 const { Pool } = require('pg');
+
+/*
 const pool = new Pool({
 	user: 'ming',
 	host: 'localhost',
 	database: 'chatdb',
 	password: 'Secure1',
 	port: 5432,
+});
+*/
+
+const pool = new Pool({
+	connectionString: process.env.DATABASE_URL,
+	ssl: true
 });
 
 
@@ -35,7 +43,7 @@ const io = socketIO(server);
 pool.on('error', (err, client) => {
 	console.error('Unexpected error on idle client', err);
 	process.exit(-1);
-})
+});
 
 app.set('pool', pool);
 
@@ -55,6 +63,7 @@ app.use(static);
 
 
 app.get('/', (req, res) => {
+
 	if(req.cookies && req.cookies.uid){
 		res.redirect('/static/home');
 	}
@@ -63,6 +72,18 @@ app.get('/', (req, res) => {
 	}
 });
 
+app.get('/createtable', async(req, res) => {
+	try{
+		await pool.query('CREATE TABLE IF NOT EXISTS userauth(id SERIAL, username VARCHAR(50) UNIQUE, hash TEXT, PRIMARY KEY(id))');
+	} catch(err){
+		let errMsg = "There was an error creating the userauth table: " + err.stack;
+		console.error(errMsg);
+		return res.send({"actionSuccess": false, "error": errMsg});
+	}
+
+	console.log("userauth table created");
+	res.send({"actionSuccess": true})
+})
 
 /*app.get('/auth/temp', (req, res) =>{
 	let userNum = Object.keys(users).length;
