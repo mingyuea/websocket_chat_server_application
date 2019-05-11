@@ -24,7 +24,7 @@ const pool = new Pool({
 });
 
 
-const PORT = 5000;
+const PORT = process.env.PORT ||  5000;
 
 /*Create Express, Node HTTP, and Socket.io server*/
 const app = express();
