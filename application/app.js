@@ -121,7 +121,7 @@ app.post('/getchat', async (req, res) => {
 
 })*/
 
-
+/*
 app.post('/exit', async (req, res) => {
 	let { msgArr, partnerID } = req.body;
 	let { uid } = req.cookies;
@@ -162,6 +162,7 @@ app.post('/exit', async (req, res) => {
 	console.log('exit', msgArr.length + " msgs received", existBool);
 	res.send({"action": true, idNum});
 });
+*/
 
 /*This is an in-memory storage of all users currently online, their usernames, userID, and socketID
 for quick and simple lookup.
@@ -266,12 +267,42 @@ io.on('connection', (socket) => {
 			}
 
 			let incomingFRList = [];
-			notifs.forEach(notifObj => {
-				if(notifObj.notiftype == "both" || notifObj.notiftype == "fr"){
+			let inMsgObj = {};
+
+			notifs.forEach(async notifObj => {
+				if(notifObj.notiftype == "fr"){
 					incomingFRList.push(notifObj.partnername);
 				}
+				else if(notifObj.notiftype == "msg"){
+					let msgCount;
+					try{
+						let lastMsgID = await dbFun.getLastMsgID(pool, uid, notifObj.partnerid);
+						msgCount = Number(lastMsgID) - Number(notifObj.lastmsgid);
+					} catch(err){
+						let errMsg = "There was an error getting the last message ID for a partner while initiating: " + err;
+						console.error(errMsg);
+						socket.emit('newError', errMsg);
+					}
+
+					inMsgObj[notifObj.partnername] = msgCount;
+				}
+				else if(notifObj.notiftype == "both"){
+					incomingFRList.push(notifObj.partnername);
+
+					let msgCount;
+					try{
+						let lastMsgID = await dbFun.getLastMsgID(pool, uid, notifObj.partnerid);
+						msgCount = Number(lastMsgID) - Number(notifObj.lastmsgid);
+					} catch(err){
+						let errMsg = "There was an error getting the last message ID for a partner while initiating: " + err;
+						console.error(errMsg);
+						socket.emit('newError', errMsg);
+					}
+
+					inMsgObj[notifObj.partnername] = msgCount;
+				}
 			});
-			console.log(incomingFRList)
+			//console.log(incomingFRList, inMsgObj);
 
 			let notifStateObj = {};
 			notifs.forEach(notifObj => {
@@ -294,53 +325,50 @@ io.on('connection', (socket) => {
 			uidObj[uid] = sockID;
 			userIDObj[uid] = uname;
 			usernameObj[uname] = uid;
-			usersArr.push(uname);
 			socketIDObj[socket.id] = uid;
 
-			//console.log("CONNECT",uidObj, socketIDObj, usersArr);
-			console.log(usersArr);
+			if(!usersArr.includes(uname)){
+				usersArr.push(uname);
+			}
+
+			console.log("CONNECT", uidObj, socketIDObj, usersArr);
+			//console.log(usersArr);
 			socket.broadcast.emit('newUser', uname);
-			resHandler( usersArr, notifStateObj, incomingFRList, friendList);
+			resHandler( usersArr, notifStateObj, incomingFRList, friendList, inMsgObj);
 	})
 
 
-	socket.on('test', async (resHandler) => {
+	/*socket.on('test', async (resHandler) => {
 		console.log("socket test", socket.handshake.headers.cookie);
 
 		let result = await dbFun.test(pool);
 		console.log(result);
 		resHandler(result);
-	});
-
-	/*socket.on('login', (username, pass, resHandler) => {
-		console.log(socket.id, username);
-		users[username] = socket.id;
-		ids[socket.id] = username; 
-		resHandler(true, null);
-		socket.broadcast.emit('newUser', {"username": username, "id": socket.id})
 	});*/
 
-	
-	/*NOT NEEDED, HANDLED BY userinit RESHANDLER
-	socket.on('pollUsers', (updateFn) => {
-		console.log("polling users", usersArr);
-		updateFn(usersArr);
-	});
-	*/
 
-
-	socket.on('switchUser', async (originalPartner, oldPartnerMsgArr, newPartner, newNotifType, selectHandler) => {
+	socket.on('switchUser', async (newPartner, newNotifType, selectHandler) => {
 		/*this should retrieve all the chat history, and clear notifications of this user*/
-		//console.log('selecting user ', newPartner, originalPartner);
+		//console.log('selecting user', newPartner, newNotifType);
 		
-		let newPartnerID = usernameObj[newPartner];
 		let userID = socketIDObj[socket.id];
 		let senderName = userIDObj[userID];
-		let oldPartnerID = usernameObj[originalPartner];
-		let oldPartnerSocket = uidObj[oldPartnerID];
-		let existBool, chatHist;
+		let existBool, chatHist, newPartnerID;;
 
-		console.log("the old partner msg is", oldPartnerMsgArr)
+		if(usernameObj[newPartner]){
+			newPartnerID = usernameObj[newPartner]
+		}
+		else{
+			try{
+				let userObj = await dbFun.getUserByName(pool, newPartner);
+				newPartnerID = userObj.id;
+			} catch(err){
+				let errMsg = "There was an error getting partner ID from database: " + err;
+				console.error(errMsg);
+				socket.emit('newError', errMsg);
+			}
+			
+		}
 
 		if(newNotifType){
 			//if a notification exists for new partner, clear or update it 
@@ -356,7 +384,7 @@ io.on('connection', (socket) => {
 			}
 			else{
 				try{
-					await dbFun.updateNotifByPartnerID(pool, userID, newPartnerID, newNotifType);
+					await dbFun.updateNotifByPartnerID(pool, userID, newPartnerID, newNotifType, true, null);
 				} catch(err){
 					let errMsg = "There was an error updating notificaitons: " + err;
 					console.error(errMsg);
@@ -365,8 +393,9 @@ io.on('connection', (socket) => {
 			}
 		}
 
+		/* Should not exist, as msgs are now saved every time
 		if(originalPartner && oldPartnerMsgArr.length > 0){
-			/*this should save the oldPartnerMsgArr to database*/
+			//this should save the oldPartnerMsgArr to database
 			console.log('saving chat with originalPartner', originalPartner);
 			let dbExist;
 
@@ -396,12 +425,13 @@ io.on('connection', (socket) => {
 				socket.emit('newError', errMsg);
 			}
 
-			/*sends old partner a notice, telling oldpartner to update chat state*/
+			//sends old partner a notice, telling oldpartner to update chat state
 			socket.to(oldPartnerSocket).emit("updateChatlist", senderName);
 		}
 		else{
 			console.log('no old parnter to save chat with');
 		}
+		*/
 
 		try{
 			existBool = await dbFun.checkChatTableExist(pool, userID, newPartnerID);
@@ -410,8 +440,6 @@ io.on('connection', (socket) => {
 			console.error(errMsg);
 			socket.emit('newError', errMsg);
 		}
-
-		console.log('chat table with newpartener exists', true);
 
 		if(existBool){
 			/*retreives last 20 msgs*/
@@ -427,7 +455,6 @@ io.on('connection', (socket) => {
 				return {msg: msgObj.msg, uid: msgObj.uid == userID}
 			});
 
-			console.log('chatHist', chatHist);
 			selectHandler(chatHist);
 		}
 		else{
@@ -451,18 +478,26 @@ io.on('connection', (socket) => {
 		let senderID = socketIDObj[socket.id];
 
 		if(receiverID) {	//receiver is currently online
-			console.log(receiverSocket);
+			//console.log(receiverSocket);
 			socket.to(receiverSocket).emit('inMsg', senderName, input);
 			//console.log(input, receiverID);
 		}
 		else { 		// receiver is not online, save to database
-			let existBool, notifType;
+			let existBool, notifType, lastMsgId;
 
 			try{
 				receiverID = await dbFun.getUserByName(pool, receiverName);
 				receiverID = receiverID.id;
 			} catch(err){
 				let errMsg = "Message was not saved. There was an error getting the reciever username: " + err;
+				console.error(errMsg);
+				socket.emit('newError', errMsg);
+			}
+
+			try{
+				lastMsgId = await dbFun.getLastMsgID(pool, senderID, receiverID);
+			} catch(err){
+				let errMsg = "Message was not saved. There was an error getting the last message id: " + err;
 				console.error(errMsg);
 				socket.emit('newError', errMsg);
 			}
@@ -502,9 +537,10 @@ io.on('connection', (socket) => {
 			}*/
 
 			if(notifType){
+				//console.log("has notif", notifType);
 				if(notifType == "fr"){
 					try{
-						await dbFun.updateNotifByPartnerID(pool, receiverID, senderID, "both");
+						await dbFun.updateNotifByPartnerID(pool, receiverID, senderID, "both", true, lastMsgId);
 					} catch(err){
 						let errMsg = "There was an error updatind the notification while saving the message: " + err;
 						console.error(errMsg);
@@ -513,8 +549,9 @@ io.on('connection', (socket) => {
 				}
 			}
 			else{
+				//console.log("has no notif", notifType);
 				try{
-					await dbFun.createNotif(pool, receiverID, senderID, senderName, "msg");
+					await dbFun.createNotif(pool, receiverID, senderID, senderName, "msg", lastMsgId);
 				} catch(err){
 					let errMsg = "There was an error creating the notification while saving the message: " + err;
 					console.error(errMsg);
@@ -555,6 +592,81 @@ io.on('connection', (socket) => {
 	});
 
 
+	socket.on('updateMsgNotif', async (partnerName) => {
+		//console.log("not chatting, creating notif")
+		/*user is not currently chatting with partner, so create a notification entry for partner in user's notifs*/
+		let partnerID, notifCheck;
+		let userID = socketIDObj[socket.id];
+
+		if(usernameObj[partnerName]){
+			partnerID = usernameObj[partnerName];
+		}
+		else{
+			try{
+				let userObj = await dbFun.getUserByName(pool, partnerName);
+				partnerID = userObj.id;
+			} catch(err){
+				let errMsg = "There was an error getting partner ID while updating message notification: "+ err
+				console.error(errMsg);
+				socket.emit('newError', errMsg); 
+			}
+		}
+
+		try{
+			notifCheck = await dbFun.checkNotifTypeByPartnerID(pool, userID, partnerID);
+		} catch(err){
+			let errMsg = "There was an error getting checking notification type while updating message notification: "+ err
+			console.error(errMsg);
+			socket.emit('newError', errMsg); 
+		}
+
+		/*If a notification exists, check if it's it's "fr" and update if so*/
+		if(notifCheck){
+			if(notifCheck == "fr"){
+				//console.log("has an fr, changing to both")
+				let newMsgId;
+
+				try{
+					newMsgId = await dbFun.getLastMsgID(pool, userID, partnerID);
+				} catch(err){
+					let errMsg = "There was an error getting last message ID while updating message notification: "+ err
+					console.error(errMsg);
+					socket.emit('newError', errMsg); 
+				}
+
+				try{
+					await dbFun.updateNotifByPartnerID(pool, userID, partnerID, "both", true, newMsgId);
+				} catch(err){
+					let errMsg = "There was an error while updating message notification: "+ err
+					console.error(errMsg);
+					socket.emit('newError', errMsg); 
+				}
+			}
+		}
+		else{ //otherwise create new notif
+			let newMsgId;
+			//console.log("has none notif, creating new")
+			try{
+				newMsgId = await dbFun.getLastMsgID(pool, userID, partnerID);
+			} catch(err){
+				let errMsg = "There was an error getting last message ID while updating message notification: "+ err
+				console.error(errMsg);
+				socket.emit('newError', errMsg); 
+			}
+
+			//console.log("DATA", userID, partnerID, partnerName, newMsgId)
+			try{
+				await dbFun.createNotif(pool, userID, partnerID, partnerName, 'msg', newMsgId);
+			} catch(err){
+				let errMsg = "There was an error getting checking notification type while updating message notification: "+ err
+				console.error(errMsg);
+				socket.emit('newError', errMsg); 
+			}
+		}
+
+	})
+
+
 	socket.on('sendFR', async (receiverName) => {
 		let senderID = socketIDObj[socket.id];
 		let senderName = userIDObj[senderID];
@@ -576,10 +688,10 @@ io.on('connection', (socket) => {
 
 		if(currNotifType){
 			//if the current notif is msg, change it to both, else leave it be
-			console.log('updating notif for fr');
+			//console.log('updating notif for fr');
 			if(currNotifType == "msg"){
 				try{
-					await dbFun.updateNotifByPartnerID(pool, receiverID, senderID, "both");
+					await dbFun.updateNotifByPartnerID(pool, receiverID, senderID, "both", false, null);
 				} catch(err){
 					let errMsg = "There was an error updating the notification while saving the message: " + err;
 					console.error(errMsg);
@@ -589,9 +701,9 @@ io.on('connection', (socket) => {
 		}
 		else { 
 			//if the notif entry for the sender does not exist, create one and set it as 'fr'
-				console.log('creating notif as fr');
+				//console.log('creating notif as fr');
 				try{
-					await dbFun.createNotif(pool, receiverID, senderID, senderName, "fr");
+					await dbFun.createNotif(pool, receiverID, senderID, senderName, "fr", null);
 				} catch(err){
 					let errMsg = "There was an error creating the notification while saving the message: " + err;
 					console.error(errMsg);
@@ -601,10 +713,10 @@ io.on('connection', (socket) => {
 	});
 
 
-	socket.on('acceptFR', async (partnerName, notifType, updateHandler) => {
+	socket.on('acceptFR', async (partnerName, updateHandler) => {
 		let userID = socketIDObj[socket.id];
 		let username = userIDObj[userID];
-		let partnerID;
+		let partnerID, notifType;
 
 		if(usernameObj[partnerName]){
 			partnerID = usernameObj[partnerName];
@@ -612,6 +724,7 @@ io.on('connection', (socket) => {
 		else{
 			try{
 				partnerID = await dbFun.getUserByName(pool, partnerName);
+				partnerID = partnerID.id;
 			} catch(err){
 				let errMsg = "There was an error getting your friend's ID while accepting FR: " + err;
 				console.error(errMsg);
@@ -619,8 +732,8 @@ io.on('connection', (socket) => {
 			}
 		}
 
-		console.log(partnerName, 'FR has been accepted');
-		/*
+		//console.log(partnerName, partnerID, 'FR has been accepted');
+		
 		try{
 			notifType = await dbFun.checkNotifTypeByPartnerID(pool, userID, partnerID)
 		} catch(err){
@@ -628,12 +741,11 @@ io.on('connection', (socket) => {
 			console.error(errMsg);
 			socket.emit('newError', errMsg);
 		}
-		*/
 
 		if(notifType){		//updates the notifaction list for the accepting user
 			if(notifType == "both"){
 				try{
-					await dbFun.updateNotifByPartnerID(pool, userID, partnerID, "msg");
+					await dbFun.updateNotifByPartnerID(pool, userID, partnerID, "msg", false, null);
 				} catch(err){
 					let errMsg = "There was an error updating notifications while accepting FR: " + err;
 					console.error(errMsg);
@@ -665,7 +777,7 @@ io.on('connection', (socket) => {
 		if(senderNotif){
 			if(senderNotif == "both"){
 				try{
-					await dbFun.updateNotifByPartnerID(pool, partnerID, userID, "msg");
+					await dbFun.updateNotifByPartnerID(pool, partnerID, userID, "msg", false, null);
 				} catch(err){
 					let errMsg = "There was an error updating your friend's notifications while accepting FR: " + err;
 					console.error(errMsg);
@@ -690,6 +802,10 @@ io.on('connection', (socket) => {
 			let errMsg = "There was an error adding user to your friends list: " + err;
 			console.error(errMsg);
 			socket.emit('newError', errMsg)
+		}
+
+		if(uidObj[partnerID]){
+			socket.to(uidObj[partnerID]).emit('FRAccepted', username);
 		}
 
 		updateHandler();
@@ -718,7 +834,7 @@ io.on('connection', (socket) => {
 			updateHandler(false, errMsg);
 		}
 
-		console.log("deleting friend ",friendID);
+		//console.log("deleting friend ",friendID);
 		updateHandler(true, null);
 	})
 
@@ -733,7 +849,7 @@ io.on('connection', (socket) => {
 		delete userIDObj[uid];
 		delete socketIDObj[socket.id];
 
-		console.log("DISCONNECT", uidObj, userIDObj, socketIDObj, usersArr)
+		//console.log("DISCONNECT", uidObj, userIDObj, socketIDObj, usersArr)
 
 		socket.broadcast.emit('userLeft', uname);
 		//socket.broadcast.emit('updateUsers', usersArr);

@@ -77,7 +77,7 @@ module.exports.register = async (pool, username, hash) => {
 		return "There was an error creating a database entry for your user: " + err.stack;
 	}
 
-	let createNotif = "CREATE TABLE notif" + newID + "(notifid SERIAL, partnerid INTEGER, partnername VARCHAR(20), notiftype VARCHAR(20), PRIMARY KEY (notifid), FOREIGN KEY (partnerid) REFERENCES userauth(id))";
+	let createNotif = "CREATE TABLE notif" + newID + "(notifid SERIAL, partnerid INTEGER, partnername VARCHAR(20), notiftype VARCHAR(20), lastmsgid INTEGER, PRIMARY KEY (notifid), FOREIGN KEY (partnerid) REFERENCES userauth(id))";
 	
 	try{
 		await pool.query(createNotif);
@@ -150,6 +150,20 @@ module.exports.createChatTable = async (pool, userID1, userID2) => {
 
 module.exports.getMsgListFromChatTable = async (pool, userID1, userID2, counter) => {
 	let tableName = tableNameResolver(userID1, userID2);
+	let selQuery = 'SELECT msg, uid FROM ' + tableName;
+	let result; 
+
+	try{
+		result = await pool.query(selQuery);
+	} catch(err){
+		return "There was an error fetching chat history: " + err.stack;
+	}
+
+	return result.rows;
+}
+
+module.exports.get20MsgFromChatTable = async (pool, userID1, userID2, counter) => {
+	let tableName = tableNameResolver(userID1, userID2);
 	let selQuery = 'SELECT msg, uid FROM (SELECT * FROM ' + tableName + ' ORDER BY id DESC LIMIT ' + String(counter * 20 + 20) + ') AS lastentrie ORDER BY id ASC';
 	let result; 
 
@@ -176,9 +190,9 @@ module.exports.getNotificationsByUserID = async (pool, userID) => {
 	return res.rows;
 }
 
-module.exports.createNotif = async (pool, userID, partnerID, partnerName, notifType) => {
-	let insertStmnt = "INSERT INTO notif"+userID+"(partnerid, partnername, notiftype) VALUES ($1, $2, $3) RETURNING notifid";
-	let values = [Number(partnerID), partnerName, notifType];
+module.exports.createNotif = async (pool, userID, partnerID, partnerName, notifType, msgID) => {
+	let insertStmnt = "INSERT INTO notif"+userID+"(partnerid, partnername, notiftype, lastmsgid) VALUES ($1, $2, $3, $4) RETURNING notifid";
+	let values = [Number(partnerID), partnerName, notifType, msgID == null ? null : Number(msgID)];
 
 	//console.log(insertStmnt, values);
 
@@ -238,10 +252,18 @@ module.exports.clearNotificationByPartnerID = async (pool, userID, partnerID) =>
 	return;
 }
 
-module.exports.updateNotifByPartnerID = async (pool, userID, partnerID, newState) => {
-	let updateStmt = "UPDATE notif" + userID + " SET notiftype = $1 WHERE partnerid = $2";
-	let values = [newState, Number(partnerID)];
+module.exports.updateNotifByPartnerID = async (pool, userID, partnerID, newState, msgUpdateBool, newMsgId) => {
+	let updateStmt, values;
 
+	if(msgUpdateBool){
+		updateStmt = "UPDATE notif" + userID + " SET notiftype = $1, lastmsgid = $2 WHERE partnerid = $3";
+		values = [newState, newMsgId == null ? null : Number(newMsgId), Number(partnerID)];
+	}
+	else{
+		updateStmt = "UPDATE notif" + userID + " SET notiftype = $1 WHERE partnerid = $2";
+		values = [newState, Number(partnerID)];
+	}
+	
 	try{
 		await pool.query(updateStmt, values);
 	} catch(err){
@@ -336,6 +358,20 @@ module.exports.removeFriendByID = async (pool, userID, friendID) => {
 	}
 
 	return;
+}
+
+module.exports.getLastMsgID = async (pool, userID, partnerID) => {
+	let tablename = tableNameResolver(userID, partnerID);
+	let searchStmnt = "SELECT id FROM "+tablename+" ORDER BY id DESC LIMIT 1";
+	let res;
+
+	try{
+		res = await pool.query(searchStmnt);
+	} catch (err){
+		return err.stack;
+	}
+
+	return res.rows[0].id;
 }
 
 /*let xx = ["afasdfgg", "zzccad df", "zcvz zcvvdda fa", "qrqwreqwr rqwer r", "fasdfadsf", "this is a test string"];
